@@ -10,6 +10,7 @@ import (
 	"github.com/forta-network/forta-json-rpc-proxy/service"
 	"github.com/forta-network/forta-json-rpc-proxy/utils"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/rs/cors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,8 +56,16 @@ func main() {
 		logrus.WithError(err).Panic("failed to create service")
 	}
 
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Accept-Language", "Content-Type", "Content-Language", "Origin", "Authorization"},
+		ExposedHeaders:   []string{"Accept", "Accept-Language", "Content-Type", "Content-Language", "Origin", "Authorization"},
+		AllowCredentials: true,
+	})
+
 	err = utils.ListenAndServe(ctx, &http.Server{
-		Handler:      service.NewProxy(srv),
+		Handler:      c.Handler(service.NewProxy(srv)),
 		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.Port),
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
