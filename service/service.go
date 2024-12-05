@@ -57,9 +57,9 @@ func NewService(
 
 // Frontrunning:
 
-func (s *Service) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
+func (s *Service) SendRawTransaction(ctx context.Context, userTx hexutil.Bytes) (common.Hash, error) {
 	tx := new(types.Transaction)
-	if err := tx.UnmarshalBinary(input); err != nil {
+	if err := tx.UnmarshalBinary(userTx); err != nil {
 		return common.Hash{}, err
 	}
 	signer, err := types.LatestSignerForChainID(s.chainID).Sender(tx)
@@ -69,7 +69,7 @@ func (s *Service) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (
 
 	// Refuse to attest to safety of transactions that deploy contracts.
 	if tx.To() == nil {
-		return s.sendTx(ctx, tx)
+		return s.sendTx(ctx, userTx)
 	}
 	// See if the the tx requires an attestation.
 	_, err = s.Call(ctx, ethereum.CallMsg{
@@ -85,7 +85,7 @@ func (s *Service) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (
 	}, nil)
 	// If it doesn't need attestation - just send the tx
 	if err == nil || !strings.Contains(err.Error(), contractErrAttestationNotFound) {
-		return s.sendTx(ctx, tx)
+		return s.sendTx(ctx, userTx)
 	}
 
 	// The attester should give back a transaction.
@@ -101,17 +101,14 @@ func (s *Service) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (
 	}
 
 	// Send both txs in a bundle.
-	if err := s.bundler.SendBundle(ctx, []hexutil.Bytes{attestTx, input}); err != nil {
+	if err := s.bundler.SendBundle(ctx, []hexutil.Bytes{attestTx, userTx}); err != nil {
 		return common.Hash{}, fmt.Errorf("failed to send bundle: %v", err)
 	}
 	return tx.Hash(), nil
 }
 
-func (s *Service) sendTx(ctx context.Context, tx *types.Transaction) (common.Hash, error) {
-	if err := s.ethClient.SendTransaction(ctx, tx); err != nil {
-		return common.Hash{}, fmt.Errorf("failed to send safe tx: %v", err)
-	}
-	return tx.Hash(), nil
+func (s *Service) sendTx(ctx context.Context, tx hexutil.Bytes) (common.Hash, error) {
+	return s.ethClient.SendRawTransaction(ctx, tx)
 }
 
 // State overridden calls:

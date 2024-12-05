@@ -17,7 +17,6 @@ type RPCClient interface {
 
 type EthClient interface {
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
-	SendTransaction(ctx context.Context, tx *types.Transaction) error
 	SendRawTransaction(ctx context.Context, tx hexutil.Bytes) (common.Hash, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 }
