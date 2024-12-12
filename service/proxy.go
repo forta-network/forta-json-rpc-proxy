@@ -56,6 +56,7 @@ func NewProxy(service *wrapperService, target, apiKey string) *Proxy {
 	reverseProxy.Director = func(r *http.Request) {
 		r.Host = targetURL.Host
 		r.URL = targetURL
+		r.Header.Del("Authorization") // strip proxy auth header
 	}
 	return &Proxy{
 		rpcServer:        rpcServer,
