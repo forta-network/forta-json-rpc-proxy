@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/forta-network/forta-json-rpc-proxy/service"
+	"github.com/forta-network/forta-json-rpc-proxy/utils"
 )
 
 type attesterClient struct {
@@ -40,7 +41,7 @@ func (ac *attesterClient) AttestWithTx(ctx context.Context, attReq *service.Atte
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ac.authToken))
 
-	resp, err := httpClient.Do(req)
+	resp, err := utils.DefaultHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("attest request failed: %v", err)
 	}

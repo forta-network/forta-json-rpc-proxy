@@ -2,22 +2,19 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 const contractErrAttestationNotFound = "120a2e773951f3178d454b2ed5973f0df81a0d0dc37028cedef36e011a64a265"
 
-var fortaFirewallBypassFlag = json.RawMessage([]byte(`{"0x0000000000000000000000000000000000f01274":{"code": "0x10"}}`))
-
-type Service struct {
+type wrapperService struct {
 	chainID        *big.Int
 	rpcClient      RPCClient
 	ethClient      EthClient
@@ -26,12 +23,12 @@ type Service struct {
 	enableBundling bool
 }
 
-// NewService creates a new service.
-func NewService(
+// NewWrapperService creates a new service that wraps a few JSON-RPC methods.
+func NewWrapperService(
 	chainID *big.Int, rpcClient RPCClient, ethClient EthClient,
 	bundler Bundler, attester Attester,
-) *Service {
-	return &Service{
+) *wrapperService {
+	return &wrapperService{
 		chainID:   chainID,
 		rpcClient: rpcClient,
 		ethClient: ethClient,
@@ -40,24 +37,9 @@ func NewService(
 	}
 }
 
-// The complete list for reference:
-// eth_sendRawTransaction
-
-// eth_call
-// eth_estimateGas
-
-// eth_getBalance
-// eth_getTransactionCount
-// eth_getBlockByNumber
-// eth_getBlockByHash
-// eth_getBlockNumber
-// eth_getCode
-// eth_gasPrice
-// eth_getTransactionReceipt
-
 // Frontrunning:
 
-func (s *Service) SendRawTransaction(ctx context.Context, userTx hexutil.Bytes) (common.Hash, error) {
+func (s *wrapperService) SendRawTransaction(ctx context.Context, userTx hexutil.Bytes) (common.Hash, error) {
 	tx := new(types.Transaction)
 	if err := tx.UnmarshalBinary(userTx); err != nil {
 		return common.Hash{}, err
@@ -72,17 +54,7 @@ func (s *Service) SendRawTransaction(ctx context.Context, userTx hexutil.Bytes) 
 		return s.sendTx(ctx, userTx)
 	}
 	// See if the the tx requires an attestation.
-	_, err = s.Call(ctx, ethereum.CallMsg{
-		From:       signer,
-		To:         tx.To(),
-		Gas:        tx.Gas(),
-		GasPrice:   tx.GasPrice(),
-		GasFeeCap:  tx.GasFeeCap(),
-		GasTipCap:  tx.GasTipCap(),
-		Value:      tx.Value(),
-		Data:       tx.Data(),
-		AccessList: tx.AccessList(),
-	}, nil)
+	_, err = s.Call(ctx, txToArgs(signer, tx), nil, nil, nil)
 	// If it doesn't need attestation - just send the tx
 	if err == nil || !strings.Contains(err.Error(), contractErrAttestationNotFound) {
 		return s.sendTx(ctx, userTx)
@@ -107,57 +79,32 @@ func (s *Service) SendRawTransaction(ctx context.Context, userTx hexutil.Bytes) 
 	return tx.Hash(), nil
 }
 
-func (s *Service) sendTx(ctx context.Context, tx hexutil.Bytes) (common.Hash, error) {
+func (s *wrapperService) sendTx(ctx context.Context, tx hexutil.Bytes) (common.Hash, error) {
 	return s.ethClient.SendRawTransaction(ctx, tx)
+}
+
+func txToArgs(signer common.Address, tx *types.Transaction) (txArgs TransactionArgs) {
+	txArgs.From = &signer
+	txArgs.To = tx.To()
+	gas := tx.Gas()
+	txArgs.Gas = (*hexutil.Uint64)(&gas)
+	txArgs.GasPrice = (*hexutil.Big)(tx.GasPrice())
+	txArgs.Value = (*hexutil.Big)(tx.Value())
+	data := tx.Data()
+	txArgs.Data = (*hexutil.Bytes)(&data)
+	return
 }
 
 // State overridden calls:
 
-func (s *Service) Call(ctx context.Context, args ...interface{}) (result hexutil.Bytes, err error) {
-	err = s.rpcClient.CallContext(ctx, &result, "eth_call", append(args, fortaFirewallBypassFlag)...)
+func (s *wrapperService) Call(ctx context.Context, txArgs TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, stateOverride *StateOverride, blockOverrides *BlockOverrides) (result hexutil.Bytes, err error) {
+	stateOverride = AddFortaFirewallStateOverride(stateOverride)
+	err = s.rpcClient.CallContext(ctx, &result, "eth_call", txArgs, blockNrOrHash, stateOverride, blockOverrides)
 	return
 }
 
-func (s *Service) EstimateGas(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	err = s.rpcClient.CallContext(ctx, &result, "eth_estimateGas", append(args, fortaFirewallBypassFlag)...)
+func (s *wrapperService) EstimateGas(ctx context.Context, txArgs TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, stateOverride *StateOverride) (result interface{}, err error) {
+	stateOverride = AddFortaFirewallStateOverride(stateOverride)
+	err = s.rpcClient.CallContext(ctx, &result, "eth_estimateGas", txArgs, blockNrOrHash, stateOverride)
 	return
-}
-
-// Whitelisted and defaulted calls:
-
-func (s *Service) callCtx(ctx context.Context, method string, args ...interface{}) (result interface{}, err error) {
-	err = s.rpcClient.CallContext(ctx, &result, method, args...)
-	return
-}
-
-func (s *Service) GetBalance(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getBalance", args...)
-}
-
-func (s *Service) GetTransactionCount(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getTransactionCount", args...)
-}
-
-func (s *Service) GetBlockByNumber(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getBlockByNumber", args...)
-}
-
-func (s *Service) GetBlockByHash(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getBlockByHash", args...)
-}
-
-func (s *Service) GetBlockNumber(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getBlockNumber", args...)
-}
-
-func (s *Service) GetCode(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getCode", args...)
-}
-
-func (s *Service) GasPrice(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_gasPrice", args...)
-}
-
-func (s *Service) GetTransactionReceipt(ctx context.Context, args ...interface{}) (result interface{}, err error) {
-	return s.callCtx(ctx, "eth_getTransactionReceipt", args...)
 }

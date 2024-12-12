@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/big"
 	"net/http"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/forta-network/forta-json-rpc-proxy/clients"
 	"github.com/forta-network/forta-json-rpc-proxy/service"
 	"github.com/forta-network/forta-json-rpc-proxy/utils"
+	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/rs/cors"
 	"github.com/sirupsen/logrus"
@@ -17,24 +19,30 @@ import (
 func main() {
 	ctx, _ := utils.InitMainContext()
 
+	err := godotenv.Load()
+	if err != nil {
+		logrus.WithError(err).Info("failed to load .env file - continuing to run with default env vars")
+	}
+
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 
 	var cfg service.Config
-	err := envconfig.Process("forta-json-rpc-proxy", &cfg)
+	err = envconfig.Process("forta-json-rpc-proxy", &cfg)
 	if err != nil {
 		logrus.WithError(err).Panic("failed to read config")
 	}
 
 	logrus.SetLevel(cfg.LogLevel)
 
-	ethClient, err := ethclient.DialContext(ctx, cfg.Target)
+	ethClient, err := ethclient.DialContext(ctx, cfg.TargetRPCURL)
 	if err != nil {
 		logrus.WithError(err).Panic("failed to dial target rpc")
 	}
-	chainID, err := ethClient.ChainID(ctx)
-	if err != nil {
-		logrus.WithError(err).Panic("failed to get chain id")
-	}
+	// chainID, err := ethClient.ChainID(ctx)
+	// if err != nil {
+	// 	logrus.WithError(err).Panic("failed to get chain id")
+	// }
+	chainID := big.NewInt(1)
 	rpcClient := ethClient.Client()
 
 	wrappedClient := clients.NewEthClient(ethClient)
@@ -51,7 +59,7 @@ func main() {
 
 	attesterClient := clients.NewAttesterClient(cfg.AttesterAPIURL, cfg.AttesterAuthToken)
 
-	srv := service.NewService(chainID, rpcClient, wrappedClient, bundler, attesterClient)
+	srv := service.NewWrapperService(chainID, rpcClient, wrappedClient, bundler, attesterClient)
 	if err != nil {
 		logrus.WithError(err).Panic("failed to create service")
 	}
@@ -65,7 +73,7 @@ func main() {
 	})
 
 	err = utils.ListenAndServe(ctx, &http.Server{
-		Handler:      c.Handler(service.NewProxy(srv)),
+		Handler:      c.Handler(service.NewProxy(srv, cfg.TargetRPCURL, cfg.APIKey)),
 		Addr:         fmt.Sprintf("0.0.0.0:%d", cfg.Port),
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
