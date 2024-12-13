@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math/big"
 	"net/http"
 	"time"
 
@@ -38,11 +37,10 @@ func main() {
 	if err != nil {
 		logrus.WithError(err).Panic("failed to dial target rpc")
 	}
-	// chainID, err := ethClient.ChainID(ctx)
-	// if err != nil {
-	// 	logrus.WithError(err).Panic("failed to get chain id")
-	// }
-	chainID := big.NewInt(1)
+	chainID, err := ethClient.ChainID(ctx)
+	if err != nil {
+		logrus.WithError(err).Panic("failed to get chain id")
+	}
 	rpcClient := ethClient.Client()
 
 	wrappedClient := clients.NewEthClient(ethClient)
