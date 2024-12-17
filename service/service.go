@@ -4,29 +4,32 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/forta-network/forta-json-rpc-proxy/interfaces"
+	"github.com/sirupsen/logrus"
 )
 
 const contractErrAttestationNotFound = "120a2e773951f3178d454b2ed5973f0df81a0d0dc37028cedef36e011a64a265"
 
+var simulateBlockNum = rpc.LatestBlockNumber
+
 type wrapperService struct {
 	chainID        *big.Int
-	rpcClient      RPCClient
-	ethClient      EthClient
-	bundler        Bundler
-	attester       Attester
+	rpcClient      interfaces.RPCClient
+	ethClient      interfaces.EthClient
+	bundler        interfaces.Bundler
+	attester       interfaces.Attester
 	enableBundling bool
 }
 
 // NewWrapperService creates a new service that wraps a few JSON-RPC methods.
 func NewWrapperService(
-	chainID *big.Int, rpcClient RPCClient, ethClient EthClient,
-	bundler Bundler, attester Attester,
+	chainID *big.Int, rpcClient interfaces.RPCClient, ethClient interfaces.EthClient,
+	bundler interfaces.Bundler, attester interfaces.Attester,
 ) *wrapperService {
 	return &wrapperService{
 		chainID:   chainID,
@@ -51,29 +54,34 @@ func (s *wrapperService) SendRawTransaction(ctx context.Context, userTx hexutil.
 
 	// Refuse to attest to safety of transactions that deploy contracts.
 	if tx.To() == nil {
-		return s.sendTx(ctx, userTx)
-	}
-	// See if the the tx requires an attestation.
-	_, err = s.Call(ctx, txToArgs(signer, tx), nil, nil, nil)
-	// If it doesn't need attestation - just send the tx
-	if err == nil || !strings.Contains(err.Error(), contractErrAttestationNotFound) {
+		logrus.WithField("txHash", tx.Hash()).Debug("skipping attestation for contract deployment - tx forwarded")
 		return s.sendTx(ctx, userTx)
 	}
 
 	// The attester should give back a transaction.
-	attestTx, err := s.attester.AttestWithTx(ctx, &AttestRequest{
+	attestTx, err := s.attester.AttestWithTx(ctx, &interfaces.AttestRequest{
 		From:    signer,
 		To:      *tx.To(),
 		Input:   hexutil.Bytes(tx.Data()).String(),
 		Value:   (*hexutil.Big)(tx.Value()),
 		ChainID: s.chainID.Uint64(),
 	})
+	if err == interfaces.ErrAttestationNotRequired {
+		logrus.WithField("txHash", tx.Hash()).Debug("attester says attestation is not required - tx forwarded")
+		return s.sendTx(ctx, userTx)
+	}
 	if err != nil {
+		logrus.
+			WithError(err).
+			WithField("txHash", tx.Hash()).Debug("attester returned error - operation failed")
 		return common.Hash{}, fmt.Errorf("attestation fails: %v", err)
 	}
 
 	// Send both txs in a bundle.
 	if err := s.bundler.SendBundle(ctx, []hexutil.Bytes{attestTx, userTx}); err != nil {
+		logrus.
+			WithError(err).
+			WithField("txHash", tx.Hash()).Debug("bundler failure")
 		return common.Hash{}, fmt.Errorf("failed to send bundle: %v", err)
 	}
 	return tx.Hash(), nil

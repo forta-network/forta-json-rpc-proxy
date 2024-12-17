@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/forta-network/forta-json-rpc-proxy/clients"
+	"github.com/forta-network/forta-json-rpc-proxy/interfaces"
 	"github.com/forta-network/forta-json-rpc-proxy/service"
 	"github.com/forta-network/forta-json-rpc-proxy/utils"
 	"github.com/rs/cors"
@@ -16,6 +17,12 @@ import (
 // Start is a blocking function which initializes internal dependencies, services
 // and the proxy and listens for incoming requests.
 func Start(cfg service.Config) {
+	attesterClient := clients.NewAttesterClient(cfg.AttesterAPIURL, cfg.AttesterAuthToken)
+	StartWithAttester(cfg, attesterClient)
+}
+
+// StartWithAttester starts with given attester implementation.
+func StartWithAttester(cfg service.Config, attester interfaces.Attester) {
 	ctx, _ := utils.InitMainContext()
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetLevel(cfg.LogLevel)
@@ -32,7 +39,7 @@ func Start(cfg service.Config) {
 
 	wrappedClient := clients.NewEthClient(ethClient)
 
-	var bundler service.Bundler
+	var bundler interfaces.Bundler
 	if len(cfg.BuilderAPIURL) > 0 {
 		bundler, err = clients.NewBuilderClient(ctx, cfg.BuilderAPIURL)
 		if err != nil {
@@ -42,9 +49,7 @@ func Start(cfg service.Config) {
 		bundler = clients.NewTxSender(wrappedClient, cfg.TxRetryTimes, cfg.TxRetryIntervalSeconds)
 	}
 
-	attesterClient := clients.NewAttesterClient(cfg.AttesterAPIURL, cfg.AttesterAuthToken)
-
-	srv := service.NewWrapperService(chainID, rpcClient, wrappedClient, bundler, attesterClient)
+	srv := service.NewWrapperService(chainID, rpcClient, wrappedClient, bundler, attester)
 	if err != nil {
 		logrus.WithError(err).Panic("failed to create service")
 	}

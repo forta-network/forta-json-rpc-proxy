@@ -1,7 +1,8 @@
-package service
+package interfaces
 
 import (
 	"context"
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -32,6 +33,12 @@ type AttestRequest struct {
 	Value   *hexutil.Big   `json:"value"`
 	ChainID uint64         `json:"chainId"`
 }
+
+type AttesterError error
+
+var (
+	ErrAttestationNotRequired AttesterError = errors.New("attestation not required")
+)
 
 type Attester interface {
 	AttestWithTx(ctx context.Context, req *AttestRequest) (tx hexutil.Bytes, err error)

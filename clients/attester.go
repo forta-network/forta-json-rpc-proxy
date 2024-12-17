@@ -10,7 +10,7 @@ import (
 	"net/http"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/forta-network/forta-json-rpc-proxy/service"
+	"github.com/forta-network/forta-json-rpc-proxy/interfaces"
 	"github.com/forta-network/forta-json-rpc-proxy/utils"
 )
 
@@ -30,7 +30,7 @@ type errorResponse struct {
 }
 
 // AttestWithTx retrieves back an attestation.
-func (ac *attesterClient) AttestWithTx(ctx context.Context, attReq *service.AttestRequest) (tx hexutil.Bytes, err error) {
+func (ac *attesterClient) AttestWithTx(ctx context.Context, attReq *interfaces.AttestRequest) (tx hexutil.Bytes, err error) {
 	var b bytes.Buffer
 	if err := json.NewEncoder(&b).Encode(attReq); err != nil {
 		return nil, fmt.Errorf("failed to encode attest request: %v", err)
@@ -56,6 +56,9 @@ func (ac *attesterClient) AttestWithTx(ctx context.Context, attReq *service.Atte
 			return nil, fmt.Errorf("failed to decode 200 body from attest response: %v", err)
 		}
 		return respBody.Tx, nil
+
+	case 406:
+		return nil, interfaces.ErrAttestationNotRequired
 
 	case 409:
 		var respBody errorResponse

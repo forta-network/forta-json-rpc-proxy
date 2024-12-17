@@ -21,11 +21,13 @@ var wrappedMethods = map[string]interface{}{
 }
 
 var proxiedMethods = map[string]interface{}{
+	"net_version":               struct{}{},
+	"eth_chainId":               struct{}{},
 	"eth_getBalance":            struct{}{},
 	"eth_getTransactionCount":   struct{}{},
 	"eth_getBlockByNumber":      struct{}{},
 	"eth_getBlockByHash":        struct{}{},
-	"eth_getBlockNumber":        struct{}{},
+	"eth_blockNumber":           struct{}{},
 	"eth_getCode":               struct{}{},
 	"eth_gasPrice":              struct{}{},
 	"eth_getTransactionReceipt": struct{}{},
@@ -84,12 +86,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Handle wrapped methods by the handlers of the local service.
 	if _, ok := wrappedMethods[reqBody.Method]; ok {
+		logrus.WithField("method", reqBody.Method).Debug("received request for wrapped method")
 		p.rpcServer.ServeHTTP(w, r)
 		return
 	}
 
 	// Handle proxied methods by proxying to the target URL.
 	if _, ok := proxiedMethods[reqBody.Method]; ok {
+		logrus.WithField("method", reqBody.Method).Debug("received request for proxied method")
 		p.reverseProxy.ServeHTTP(w, r)
 		return
 	}
@@ -98,6 +102,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The wrapped methods are enabled for everyone and that's already handled
 	// as part of the first case above.
 	if p.apiKeyConfigured && r.Header.Get("Authorization") == p.authHeaderVal {
+		logrus.WithField("method", reqBody.Method).Debug("received request for authorized method")
 		p.reverseProxy.ServeHTTP(w, r)
 		return
 	}

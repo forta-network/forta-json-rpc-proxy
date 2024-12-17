@@ -7,20 +7,20 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/forta-network/forta-json-rpc-proxy/service"
+	"github.com/forta-network/forta-json-rpc-proxy/interfaces"
 	"github.com/sirupsen/logrus"
 )
 
 type txSender struct {
-	ethClient     service.EthClient
+	ethClient     interfaces.EthClient
 	retryTimes    int
 	retryInterval time.Duration
 }
 
-var _ service.Bundler = &txSender{}
+var _ interfaces.Bundler = &txSender{}
 
 // NewTxSender creates a new bundler client which sends transactions in order.
-func NewTxSender(ethClient service.EthClient, retryTimes int, retryIntervalSeconds int) *txSender {
+func NewTxSender(ethClient interfaces.EthClient, retryTimes int, retryIntervalSeconds int) *txSender {
 	return &txSender{
 		ethClient:     ethClient,
 		retryTimes:    retryTimes,
@@ -46,7 +46,7 @@ func (ts *txSender) SendBundle(ctx context.Context, txs []hexutil.Bytes) error {
 	for i := 0; i < ts.retryTimes; i++ {
 		receipt, err := ts.ethClient.TransactionReceipt(ctx, txHash)
 		if err != nil {
-			logrus.WithError(err).Debug("failed to get first tx receipt")
+			logrus.WithError(err).Debug("failed to get first tx receipt - will retry")
 			time.Sleep(ts.retryInterval)
 			continue
 		}
