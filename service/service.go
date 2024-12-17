@@ -81,8 +81,8 @@ func (s *wrapperService) SendRawTransaction(ctx context.Context, userTx hexutil.
 	if err := s.bundler.SendBundle(ctx, []hexutil.Bytes{attestTx, userTx}); err != nil {
 		logrus.
 			WithError(err).
-			WithField("txHash", tx.Hash()).Debug("bundler failure")
-		return common.Hash{}, fmt.Errorf("failed to send bundle: %v", err)
+			WithField("txHash", tx.Hash()).Debug("failed to send transactions")
+		return common.Hash{}, fmt.Errorf("failed to send transactions: %v", err)
 	}
 	return tx.Hash(), nil
 }
