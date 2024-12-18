@@ -13,10 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const contractErrAttestationNotFound = "120a2e773951f3178d454b2ed5973f0df81a0d0dc37028cedef36e011a64a265"
-
-var simulateBlockNum = rpc.LatestBlockNumber
-
 type wrapperService struct {
 	chainID        *big.Int
 	rpcClient      interfaces.RPCClient
