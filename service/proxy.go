@@ -31,6 +31,8 @@ var proxiedMethods = map[string]interface{}{
 	"eth_getCode":               struct{}{},
 	"eth_gasPrice":              struct{}{},
 	"eth_getTransactionReceipt": struct{}{},
+	"eth_feeHistory":            struct{}{},
+	"eth_maxPriorityFeePerGas":  struct{}{},
 }
 
 // Proxy intercepts and forwards JSON-RPC requests.

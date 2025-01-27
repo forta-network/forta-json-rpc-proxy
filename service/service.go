@@ -63,7 +63,7 @@ func (s *wrapperService) SendRawTransaction(ctx context.Context, userTx hexutil.
 		ChainID: s.chainID.Uint64(),
 	})
 	if err == interfaces.ErrAttestationNotRequired {
-		logrus.WithField("txHash", tx.Hash()).Debug("attester says attestation is not required - tx forwarded")
+		logrus.WithField("txHash", tx.Hash()).WithField("tx", tx).Debug("attester says attestation is not required - tx forwarded")
 		return s.sendTx(ctx, userTx)
 	}
 	if err != nil {
@@ -103,12 +103,31 @@ func txToArgs(signer common.Address, tx *types.Transaction) (txArgs TransactionA
 
 func (s *wrapperService) Call(ctx context.Context, txArgs TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, stateOverride *StateOverride, blockOverrides *BlockOverrides) (result hexutil.Bytes, err error) {
 	stateOverride = AddFortaFirewallStateOverride(stateOverride)
-	err = s.rpcClient.CallContext(ctx, &result, "eth_call", txArgs, blockNrOrHash, stateOverride, blockOverrides)
+	err = s.rpcClient.CallContext(ctx, &result, "eth_call", txArgs, blockNrOrHash, stateOverride)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"txArgs":         txArgs,
+			"blockNrOrHash":  blockNrOrHash,
+			"stateOverride":  stateOverride,
+			"blockOverrides": blockOverrides,
+		}).Info("eth_call failed")
+	}
 	return
 }
 
 func (s *wrapperService) EstimateGas(ctx context.Context, txArgs TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, stateOverride *StateOverride) (result interface{}, err error) {
 	stateOverride = AddFortaFirewallStateOverride(stateOverride)
-	err = s.rpcClient.CallContext(ctx, &result, "eth_estimateGas", txArgs, blockNrOrHash, stateOverride)
-	return
+	err = s.rpcClient.CallContext(ctx, &result, "eth_estimateGas", stateOverride)
+	if err != nil {
+		logrus.WithError(err).WithFields(logrus.Fields{
+			"txArgs":        txArgs,
+			"blockNrOrHash": blockNrOrHash,
+			"stateOverride": stateOverride,
+		}).Info("eth_estimateGas failed")
+		return nil, err
+	}
+	gas, _ := hexutil.DecodeBig(result.(string))
+	// TODO: Calculate gas bump based on percentage?
+	gas = gas.Add(gas, big.NewInt(50000))
+	return ((*hexutil.Big)(gas)).String(), nil
 }
